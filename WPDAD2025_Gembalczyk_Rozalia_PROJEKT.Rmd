@@ -1,0 +1,408 @@
+---
+title: "Projekt zaliczeniowy"
+subtitle: "Wybrane pakiety do analizy danych 2025"
+author: "Nazwisko i imię, numer indeksu"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# <span style="color: blue;">Wybór i opis zbioru danych</span> 
+
+Dostępnych jest 10 zbiorów danych. Do opracowania należy wybrać ten, którego
+numer jest równy **ostatniej cyfrze numeru indeksu**
+
+Zbiór danych zawiera następujące informacje o ofertach sprzedaży mieszkań. Poniżej zestawienie danych i ich opis.
+
+1.	`Id_oferty`: Unikalny identyfikator oferty
+
+2. `cena`: Cena mieszkania w PLN
+
+3. `powierzchnia`: Powierzchnia mieszkania w metrach kwadratowych
+
+4. `dzielnica`: Jedna z 5 analizowanych dzielnic
+
+5. `l_pokoi`: Liczba pokoi w mieszkaniu
+
+6. `odleglosc_od_sklepu`: Odległość od najbliższego dyskontu w metrach
+
+7. `odleglosc_od_przystanku`: Odległość od najbliższego przystanku komunikacji miejskiej
+
+8. `pietro`: Klasyfikacja pięter jako parter, ostatnie piętro lub pośrednie piętro
+
+9. `parking`: 0 – brak miejsca postojowego lub parkingu, 1 – jest miejsce postojowe lub parking
+
+10. `winda`: 0 dla braku windy, 1 gdy winda jest w budynku
+
+
+
+
+
+
+# <span style="color: red;">Przygotowanie danych</span> 
+
+## Zadania
+
+- W pierwszym polu umieść wszystkie biblioteki używane w projekcie.
+
+-	Załaduj dane (kod, bez kreatora) i przekształć zmienne jakościowe na typ `factor`.
+
+-	Wyświetl podsumowanie danych. Na podstawie tego określ, które zmienne są jakościowe, a które ilościowe.
+
+## Rozwiązania
+```{r}
+#install.packages("openxlsx")
+library(ggplot2) #to na pewno się przyda
+library(openxlsx)
+library(Hmisc)
+library(Przewodnik)
+library(fitdistrplus)
+library(lmtest)
+library("car")
+library(moments)
+```
+
+
+```{r}
+dane = read.xlsx("C://Users//Rozalka//Desktop//mieszkania8.xlsx", sheet=1)
+head(dane)
+dane$dzielnica = as.factor(dane$dzielnica)
+dane$pietro = as.factor(dane$pietro)
+dane$parking = as.factor(dane$parking)
+dane$winda = as.factor(dane$winda)
+
+summary(dane)
+
+
+```
+
+
+```{}
+Zmiennymi jakościowymi są dzielnica, pietro, parking oraz winda. Zmiennymi ilościowymi są odleglosc_od_sklepu, cena, powierzchnia, l_pokoi oraz odleglosc_od_przystanku. 
+
+
+
+```
+
+
+
+
+# <span style="color: green;">Obsługa brakujących danych</span> 
+
+## Zadania
+
+Sprawdź, czy w zestawie danych występują wartości `NA`. Jeśli tak:
+
+-	Dla zmiennych jakościowych zastąp brakujące wartości najczęściej występującą kategorią.
+
+-	Dla zmiennych ilościowych zastąp brakujące wartości średnią.
+
+- Ze względu na działanie funkcji `impute` może być przydatna ponowna konwersja na odpowiedni typ zmiennej.
+
+## Rozwiązania
+
+```{r}
+tab_licz1 = table(dane$pietro)
+d1 = names(which.max(tab_licz1))
+
+tab_licz2 = table(dane$parking)
+d2 = names(which.max(tab_licz2))
+
+tab_licz3 = table(dane$winda)
+d3 = names(which.max(tab_licz3))
+
+dane$cena = impute(dane$cena, fun=mean)
+dane$powierzchnia = impute(dane$powierzchnia, fun=mean)
+dane$l_pokoi  = impute(dane$l_pokoi , fun=mean)
+dane$odleglosc_od_przystanku = impute(dane$odleglosc_od_przystanku, fun=mean)
+dane$odleglosc_od_sklepu = impute(dane$odleglosc_od_sklepu, fun=mean)
+dane$pietro = impute(dane$pietro, d1)
+dane$parking = impute(dane$parking, d2)
+dane$winda = impute(dane$winda, d3)
+
+
+dane$dzielnica = as.factor(dane$dzielnica)
+dane$pietro = as.factor(dane$pietro)
+dane$parking = as.factor(dane$parking)
+dane$winda = as.factor(dane$winda)
+
+dane$cena = as.numeric(dane$cena)
+dane$powierzchnia = as.numeric(dane$powierzchnia)
+dane$l_pokoi = as.numeric(dane$l_pokoi)
+dane$odleglosc_od_przystanku = as.numeric(dane$odleglosc_od_przystanku)
+summary(dane)
+```
+
+
+# <span style="color: blue;"> Funkcja wyszukująca atrakcyjne oferty</span> 
+
+## Zadania 
+
+Napisz funkcję `atrakcyjne_oferty()`, która:
+
+-	jako argument przyjmuje całą ramkę z ofertami mieszkań
+
+-	wylicza cenę za metr kwadratowy każdego mieszkania
+
+-	wylicza uśrednioną cenę za metr kwadratowy w każdej dzielnicy osobno
+
+-	na podstawie ceny za metr kwadratowy wybiera po 3 najatrakcyjniejsze oferty z każdej dzielnicy (czyli najniższą wartość tego parametru)
+
+-	zwraca listę złożoną z dwóch elementów:
+
+(a) wektora średnich cen metra kwadratowego w poszczególnych dzielnicach
+
+(b) ramkę danych zawierającą po 3 najatrakcyjniejsze oferty dla każdej dzielnicy. Ramka ta ma zawierać **tylko** elementy: id_oferty, dzielnica, cena za metr, cena, liczba pokoi
+
+- funkcja nie powinna korzystać ze globalnej ramki danych, należy przekazać ją jako argument (trzeba zadbać o odpowiednie nazwy)
+
+
+
+## Rozwiązania
+
+
+```{r}
+atrakcyjne_oferty = function(df){
+  df$cena_za_metr = df$cena/dane$powierzchnia
+  usredniona = aggregate(cena_za_metr ~ dzielnica, data = df, FUN = mean)
+  dane_sorted = df[order(df$dzielnica, df$cena_za_metr), ]
+  dzielnice = split(dane_sorted, dane_sorted$dzielnica)
+  
+  top3 = lapply(dzielnice, function(x) {
+    head(x, 3)
+  })
+  
+  a1 = tapply(df$cena_za_metr, df$dzielnica, mean)
+  b1 = do.call(rbind, lapply(dzielnice, head,3))
+  b2 = b1[, c("id_oferty", "dzielnica", "cena_za_metr", "cena", "l_pokoi")]
+  rownames(b2) = NULL
+  return(list(a1,b2))
+}
+
+atrakcyjne_oferty(dane)
+
+```
+
+
+
+# <span style="color: red;">Wykres słupkowy dzielnic i wind</span> 
+
+## Zadania
+
+-	Używając biblioteki `ggplot2`, stwórz wykres słupkowy (pionowe słupki) porównujący liczbę ofert w poszczególnych dzielnicach z podziałem (kolorem) na status windy (jest widna czy brak - koło siebie) . 
+
+- Wykres powinien mieć odpowiednio podpisane osie, tytuł, legendę oraz zmienione kolory słupków i tła.
+
+- status windy opisać na legendzie słownie (zamiast 0 - brak windy, zamiast 1 - jest winda).
+
+-	Na podstawie otrzymanego wykresu, opisz, jakie wnioski można wyciągnąć na temat zależności między dzielnicami a istnieniem windy w budynkach?
+
+## Rozwiązania
+
+```{r}
+ggplot(dane, aes(x= dzielnica, fill = winda))+
+  geom_bar(position="dodge")+
+  scale_fill_manual(
+    values = c("0" = "#7AA5EE", "1" = "#6F0148"),
+    labels = c("Brak windy", "Jest winda")
+  ) +
+  labs(title = "Liczba ofert w dzielnicach z podziałem na status windy",
+    x = "Dzielnica",
+    y = "Liczba ofert",
+    fill = "Winda (0-brak, 1-jest)")+
+  theme(
+    panel.background = element_rect(fill="white"),
+    panel.border = element_rect(color = "black", size = 0.2, fill = NA),  
+    panel.grid.major = element_line(color = "grey", size = 0.2),  
+    panel.grid.minor = element_line(color = "grey", size = 0.25)
+  )
+
+
+
+```
+
+
+```{}
+We wszytskich dzielnicach występuje znacząca przewaga mieszkań z windą. Najwięcej mieszkań występuje w dzielnicy Dębniki, jest też tam najwięcej mieszkań z windą (blisko 500). Najmniejsza liczba mieszkań występuje w dzielnicy Prądnik Biały, jest też tam najmniejsza liczba mieszkań z windą (około 70). Najwięcej mieszkań bez widny znajduje się w dzielnicy Dębniki (blisko 100), a najmniej w dzielnicy Prądnik Biały (około 10).Dzielnice Bronowice i Nowa Huta mają zbliżone wartości mieszkań z windą i mieszkań bez windy. Najwięcej mieszkań bez windy w stosunku do mieszkań z windą jest w dzielnicy Stare Miasto, co prawdopodobnie wynika z starej zabudowy charakteryzującej się brakiem wind. W Dębnikach i Bronowicach przewaga ofert z windą jest największa, co może sugerować istnienie nowszych osiedli mieszkaniowych. 
+Podsumowując, niezależnie od lokalizacji winda stała się waznym aspektem budownictwa. Największy wybór mieszkań (niezależnie od standardu) znajduje się w Dębnikach, natomiast najtrudniej o mieszkanie bez windy jest w Prądniku Białym.
+
+
+
+
+```
+
+
+# <span style="color: green;">Histogram ceny mieszkań</span> 
+
+## Zadania
+
+-	Stwórz histogram dla ceny mieszkań, dodając linię reprezentującą jądrowy estymator gęstości oraz przerywane linie oznaczające średnią i medianę.
+
+- Oznacz osie, nadaj tytuł, zmień kolory histogramu oraz linii i dodaj legendę (legendy powinny uwzględniać styl linii, np. przerywana linia w legendzie odpowiada przerywanej linii na wykresie).
+
+
+-	Określ charakterystykę rozkładu: modalność, skośność i symetryczność.
+
+
+## Rozwiązania
+
+```{r}
+mean_price = mean(dane$cena)
+median_price = median(dane$cena)
+#plot(density(dane$cena))
+hist(dane$cena, main="Rozkład cen mieszkań", xlab="Cena mieszkania w PLN", ylab="Gęstość", col="#CCD3EE", , probability=TRUE)
+lines(density(dane$cena))
+abline(v = mean_price, col = "#eb3434", lwd = 2, lty = 2)
+abline(v = median_price, col = "#3CA158", lwd = 2, lty = 2)
+legend("topright", 
+       legend = c("Średnia", "Mediana"),
+       col = c("#eb3434", "#3CA158"),
+       lwd = 2, 
+       lty = 2)
+
+skewness(dane$cena)
+kurtosis(dane$cena)
+
+```
+
+
+```{}
+Jest to rozkład asymetryczny, prawoskośny z ogonem wyciągniętym w prawo i średnią większą niż mediana.Jest to niesymetryczny rozkład bimodalny, czyli posiadający dwie mody: jedną dla watości około 500 000 zł, drugą dla wartości ponad 1 000 000 zł. 
+
+
+```
+
+# <span style="color: blue;">Wykresy pudełkowe dla powierzchni mieszkania vs. piętro</span> 
+
+## Zadania
+
+-	Przy użyciu `ggplot2`, narysuj wykresy pudełkowe dla powierzchni mieszkania z podziałem kolorem na status parkingu (jest czy nie ma) oraz z podziałem na osobne panele ze względu na piętro.
+
+
+
+## Rozwiązania
+
+
+```{r}
+ggplot(dane, aes( y=powierzchnia, color=parking))+
+  geom_boxplot()+
+  labs(title="Wykresy pudełkowe dla powierzchni mieszkania z podziałem kolorem na \nstatus parkingu (jest czy nie ma) oraz z podziałem na osobne panele ze \nwzględu na piętro", x="piętro i parking (0 – brak miejsca postojowego lub parkingu, 1 – jest miejsce postojowe lub parking) ", y="powierzchnia mieszkania")+
+  facet_grid(~pietro, labeller=label_both)
+
+
+
+
+```
+
+
+
+
+# <span style="color: red;">Analiza rozkładu ceny mieszkań dla najliczniej reprezentowanej dzielnicy</span> 
+
+## Zadania
+
+
+-	Wybierz ceny mieszkań dla najliczniej reprezentowanej dzielnicy
+
+-  Przeprowadź analizę rozkładu: na podstawie wykresu Cullen and Frey wybierz i  porównaj trzy różne rozkłady, wyestymuj ich parametry i oceń dopasowanie za pomocą wykresów QQplot oraz kryteriów informacyjnych.
+
+Rodziny rozkładów:
+wykładniczy `exp`, logarytmiczno-normalny `lnorm`, gamma `gamma`, normalny `norm`,  t-Studenta `t`,
+Weibulla `weibull`, beta `beta`, jednostajny `unif`
+
+
+## Rozwiązania
+
+```{r}
+n_dzielnica = names(which.max(table(dane$dzielnica)))
+ceny_n = dane$cena[dane$dzielnica == n_dzielnica]
+value = ceny_n
+#hist(value, breaks = 30)
+descdist(value, discrete = FALSE) 
+
+normalize <- function(x) {
+  return((x - min(x)) / (max(x) - min(x)))
+}
+
+normalized_value <- normalize(value)
+normalized_value[normalized_value==0]=0.00001
+normalized_value[normalized_value==1]=0.99999
+
+fit_beta <- fitdist(normalized_value, "beta")
+plot(fit_beta) 
+fit_unif <- fitdist(normalized_value, "unif")
+plot(fit_unif) 
+fit_norm <- fitdist(normalized_value, "norm")
+plot(fit_norm)
+
+gof_results1 <- gofstat(list(fit_beta, fit_unif), fitnames = c("Beta", "Jedostajny"))
+gof_results2 <- gofstat(list(fit_beta, fit_norm), fitnames = c( "Beta", "Normalny"))
+print(gof_results1)
+print(gof_results2)
+
+
+```
+
+
+
+```{}
+
+Analizując wykres Cullen and Frey można stwierdzić, że najbardziej pasującym rozkładem będzie rozkład beta albo rozkład jednostajny. Po dokładniejszej analizie za pomocą Goodness-of-fit statistics i obliczonych tam wartości różnych statystyk dochodzimy do wniosku, że najlepszym dopasowaniem będzie rozkład beta, ponieważ wartości statystyk dla niego są niższe niż dla inncyh rozkładów. Potwierdzają to też wykresy QQplot, na których widać, że rozkład beta jest najbardziej zbliżony do rozkładu danych. 
+
+
+
+```
+
+# <span style="color: green;">Analiza regresji</span> 
+
+## Zadania
+
+Zbuduj model regresji liniowej badający zależność:
+
+`cena ~ powierzchnia + odleglosc_od_sklepu+odleglosc_od_przystanku`
+
+Zinterpretuj (opisz ich istotność):
+
+-	współczynniki regresji,
+-	istotność modelu.
+
+Sprawdź założenia modelu przy użyciu wykresów diagnostycznych i testów statystycznych. Opisz płynące z nich wnioski.
+
+
+
+## Rozwiązania
+
+```{r}
+model_dane = lm(cena ~ powierzchnia + odleglosc_od_sklepu+odleglosc_od_przystanku, data=dane)
+summary(model_dane)
+
+par(mfrow=c(2,2))
+plot(model_dane)
+
+bptest(model_dane)
+durbinWatsonTest(model_dane)
+shapiro.test(model_dane$residuals)
+
+
+
+```
+
+
+```{}
+Wszystkie zmienne w modelu są statystycznie istotne, ponoeważ dla każdej z nich p-wartości wynosi mniej niż 0.05. Multiple R-squared:  0.8869, czyli model jest bardzo dobrze dopasowany (wyjaśnia 88,7% zmienności cen mieszkań). p-wartośc w F-statystyce < 2.2e-16, zatem wnioskujemy, że model jest statystycznie istotny. 
+
+Z testu Breusch-Pagan wynika, że Breusch-Pagan test, co oznacza, że jest mniejsza od przyjętej wartości p=0.05, czyli odrzucamy hipotezę, że wariancja jest jednorodna. Z testu Durbina-watsona mamy rho!=0 i p-wartość równą 0.898 oraz statystykę D-W bliską 2, zatem W modelu nie występuje istotna statystycznie autokorelacja dodatnia oraz dane spełniają założenie o niezależności błędów. Z testów Shapiro-Wilk wnioskujemy, że błedy są niezależne i rozkład błędów odbiega od rozkładu normalnego. 
+
+Z wykresów diagnostycznych można wywnioskować następujące rzeczy:
+*Residuals vs Fitted: czerwona linia nie jest idealnie prosta i równa 0, dlatego założenie o liniowości i stałej wariancji nie jest całkowicie spełnione,
+*Q-Q Residuals: reszty nie mają rozkładu normalnego (widac to przy wysokich wartościach), zatem przy wyższych cenach mieszkań model może popełniać błędy,
+*Scale-Location: wynika z tego, że przeciętna wartość błędu rośnie wraz z ceną mieszkania (brak jednorodności wariancji),
+*Residuals vs Leverage: występują wartości nietypowe, ale nie wpływają znacząco na model.
+
+Model jest zatem istotny, ale przy wyższych cenach mieszkań wykazuje pewne błędy (ceny powyżej 1 000 000 zł).
+
+```
